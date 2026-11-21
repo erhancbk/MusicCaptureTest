@@ -206,13 +206,24 @@ class CaptureService : Service() {
             if (bytesWritten <= 0L) {
                 report("Ses verisi gelmedi; dosya oluşturulmadı.")
             } else {
-                report("Kayıt kaydediliyor...")
-                val filename = saveWav(recordingFile, bytesWritten)
+                report("Kayıt MP3'e dönüştürülüyor (192 kb/sn)...")
+                val filename = try {
+                    Mp3Writer.write(contentResolver, recordingFile)
+                } catch (conversionError: Exception) {
+                    // Preserve the recording instead of silently discarding it on encoder failure.
+                    val backupFile = saveWav(recordingFile, bytesWritten)
+                    report(
+                        "MP3 dönüşümü başarısız: " +
+                        (conversionError.message ?: conversionError.javaClass.simpleName) +
+                        ". Yedek WAV: Müzik/MusicCaptureTest/" + backupFile
+                    )
+                    return
+                }
                 if (signalDetected) {
-                    report("Kaydedildi: Müzik/MusicCaptureTest/" + filename)
+                    report("MP3 kaydedildi: Müzik/MusicCaptureTest/" + filename)
                 } else {
                     report(
-                        "Sessiz kayıt: " + filename +
+                        "Sessiz MP3 kaydı: " + filename +
                         ". Kaynak uygulama dahili ses yakalamayı engelliyor olabilir."
                     )
                 }
