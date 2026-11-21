@@ -1,0 +1,2 @@
+# Music Capture Test
+Android 10+ media playback capture experiment. This test records WAV, not MP3. Playback capture depends on source app policy; it does not bypass DRM. Build APK in GitHub Actions > Build Android APK > Artifacts. Grant audio, screen capture and notification-listener permissions. Output: Music/MusicCaptureTest.
