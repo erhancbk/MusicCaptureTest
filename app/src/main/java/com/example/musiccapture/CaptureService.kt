@@ -126,6 +126,8 @@ class CaptureService : Service() {
         var tempFile: File? = null
         var bytesWritten = 0L
         var signalDetected = false
+        val seenSongs = linkedMapOf<String, SongInfo>()
+        var lastSongCheck = 0L
 
         try {
             val manager = getSystemService(MediaProjectionManager::class.java)
@@ -174,10 +176,18 @@ class CaptureService : Service() {
                 "Ses kaydı başlatılamadı."
             }
 
-            report("Kayıt sürüyor. Başka uygulamada ses çal, sonra Durdur'a bas.")
+            report("Kayıt sürüyor. Bir şarkı çal, sonra Durdur / Kaydet seç.")
             val buffer = ByteArray(16384)
             FileOutputStream(recordingFile).use { output ->
                 while (shouldRecord) {
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (now - lastSongCheck >= 1000L) {
+                        lastSongCheck = now
+                        PlayingSong.current(this)?.let { song ->
+                            val key = song.sourcePackage + "|" + song.title + "|" + song.artist
+                            seenSongs[key] = song
+                        }
+                    }
                     val count = recorder.read(
                         buffer, 0, buffer.size, AudioRecord.READ_BLOCKING
                     )
@@ -206,9 +216,14 @@ class CaptureService : Service() {
             if (bytesWritten <= 0L) {
                 report("Ses verisi gelmedi; dosya oluşturulmadı.")
             } else {
-                report("Kayıt MP3'e dönüştürülüyor (192 kb/sn)...")
+                PlayingSong.current(this)?.let { song ->
+                    seenSongs[song.sourcePackage + "|" + song.title + "|" + song.artist] = song
+                }
+                val hasMultipleSongs = seenSongs.size > 1
+                val songForFilename = if (seenSongs.size == 1) seenSongs.values.first() else null
+                report("Kayıt MP3'e dönüştürülüyor (320 kb/sn)...")
                 val filename = try {
-                    Mp3Writer.write(contentResolver, recordingFile)
+                    Mp3Writer.write(contentResolver, recordingFile, songForFilename, hasMultipleSongs)
                 } catch (conversionError: Exception) {
                     // Preserve the recording instead of silently discarding it on encoder failure.
                     val backupFile = saveWav(recordingFile, bytesWritten)
@@ -220,7 +235,12 @@ class CaptureService : Service() {
                     return
                 }
                 if (signalDetected) {
-                    report("MP3 kaydedildi: Müzik/MusicCaptureTest/" + filename)
+                    val suffix = when {
+                        hasMultipleSongs -> " (Birden fazla şarkı algılandı; kayıt tek dosya.)"
+                        songForFilename == null -> " (Şarkı adı bulunamadı; bildirim erişimini kontrol et.)"
+                        else -> ""
+                    }
+                    report("MP3 kaydedildi: Müzik/MusicCaptureTest/" + filename + suffix)
                 } else {
                     report(
                         "Sessiz MP3 kaydı: " + filename +
