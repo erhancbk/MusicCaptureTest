@@ -38,7 +38,7 @@ class CaptureService : Service() {
   super.onCreate()
   val channel=NotificationChannel(CHANNEL,"Music capture",NotificationManager.IMPORTANCE_LOW)
   (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(channel)
-  registerReceiver(receiver,IntentFilter(TRACK))
+
  }
  override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
   if(intent?.action==STOP) { stopCapture();stopSelf();return START_NOT_STICKY }
@@ -83,7 +83,7 @@ class CaptureService : Service() {
   recorder?.release();recorder=null;projection?.stop();projection=null
   stopForeground(STOP_FOREGROUND_REMOVE)
  }
- override fun onDestroy() { stopCapture();unregisterReceiver(receiver);super.onDestroy() }
+ override fun onDestroy() { stopCapture();super.onDestroy() }
  override fun onBind(intent:Intent?)=null
 }
 private class WavWriter(private val context:Context,name:String) {
