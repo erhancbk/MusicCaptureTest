@@ -19,5 +19,15 @@
             android:name=".CaptureService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
+        <!-- User opt-in. Only the active music session's title and artist are read. -->
+        <service
+            android:name=".PlaybackNotificationListener"
+            android:label="Ses Test - Şarkı Adı"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>
