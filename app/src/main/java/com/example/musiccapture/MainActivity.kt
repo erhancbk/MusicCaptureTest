@@ -18,12 +18,14 @@ class MainActivity : Activity() {
     companion object {
         private const val REQUEST_AUDIO = 101
         private const val REQUEST_CAPTURE = 102
+        private const val REQUEST_IMPORT = 103
     }
 
     private lateinit var statusText: TextView
     private lateinit var songStatusText: TextView
     private lateinit var historyButton: Button
     private lateinit var historyText: TextView
+    private lateinit var importStatusText: TextView
     private var historyVisible = false
 
     private val statusReceiver = object : BroadcastReceiver() {
@@ -113,6 +115,18 @@ class MainActivity : Activity() {
             }
         }
 
+        importStatusText = TextView(this).apply {
+            textSize = 13f
+            setPadding(4, 4, 4, 8)
+            text = "Eski kayıtların görünmemesi durumunda izin verip taratabilirsin."
+        }
+        val importButton = Button(this).apply {
+            text = "Eski kayıtları tara"
+            textSize = 12f
+            isAllCaps = false
+            setOnClickListener { askImportPermission() }
+        }
+
         // Put both compact controls at the very top, side by side, about half-width each.
         val density = resources.displayMetrics.density
         val buttons = LinearLayout(this).apply {
@@ -132,6 +146,8 @@ class MainActivity : Activity() {
         layout.addView(songStatusText)
         layout.addView(historyButton)
         layout.addView(historyText)
+        layout.addView(importButton)
+        layout.addView(importStatusText)
         layout.addView(title)
         layout.addView(description)
         setContentView(ScrollView(this).apply { addView(layout) })
@@ -154,6 +170,37 @@ class MainActivity : Activity() {
         }.onFailure {
             historyText.text = "Kayıt geçmişi okunamadı: " + (it.message ?: "bilinmeyen hata")
         }
+    }
+
+    private fun askImportPermission() {
+        val permission = if (Build.VERSION.SDK_INT >= 33) {
+            Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        if (checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
+            importOldFiles()
+        } else {
+            requestPermissions(arrayOf(permission), REQUEST_IMPORT)
+        }
+    }
+
+    private fun importOldFiles() {
+        importStatusText.text = "Eski kayıtlar taranıyor..."
+        Thread {
+            val result = runCatching {
+                RecordingHistory(this).use { it.importExistingRecordings() }
+            }
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    importStatusText.text = result.fold(
+                        onSuccess = { "Tarama tamamlandı. Geçmişe eklenen eski dosya: " + it },
+                        onFailure = { "Tarama başarısız: " + (it.message ?: "bilinmeyen hata") }
+                    )
+                    refreshHistory()
+                }
+            }
+        }.start()
     }
 
     private fun checkPermissionAndStart() {
@@ -180,6 +227,12 @@ class MainActivity : Activity() {
                 askMediaProjectionConsent()
             } else {
                 statusText.text = "Android ses yakalama için ses kayıt iznini zorunlu tutuyor."
+            }
+        } else if (requestCode == REQUEST_IMPORT) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                importOldFiles()
+            } else {
+                importStatusText.text = "Eski dosya tarama izni verilmedi. Yeni kayıtların geçmişi tutulmaya devam eder."
             }
         }
     }
