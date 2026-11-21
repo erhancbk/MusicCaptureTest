@@ -30,6 +30,8 @@ class CaptureService : Service() {
         const val PREFS = "capture_status"
         private const val CHANNEL = "internal_audio_capture"
         private const val NOTIFICATION_ID = 81
+        private const val DUPLICATE_CHANNEL = "song_duplicate_warning"
+        private const val DUPLICATE_NOTIFICATION_ID = 82
         private const val SAMPLE_RATE = 44100
         private const val CHANNEL_COUNT = 2
     }
@@ -46,6 +48,10 @@ class CaptureService : Service() {
             CHANNEL, "Dahili ses yakalama", NotificationManager.IMPORTANCE_LOW
         )
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        val duplicateChannel = NotificationChannel(
+            DUPLICATE_CHANNEL, "Tekrar kaydedilen şarkılar", NotificationManager.IMPORTANCE_HIGH
+        )
+        getSystemService(NotificationManager::class.java).createNotificationChannel(duplicateChannel)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -102,6 +108,27 @@ class CaptureService : Service() {
             .build()
     }
 
+    private fun warnPreviouslySaved(song: SongInfo, match: RecordingHistory.Entry) {
+        val message = "⚠ Daha önce kaydedildi: " + song.displayName() +
+            ". Önceki dosya: " + match.filename + ". Kayıt devam ediyor."
+        report(message)
+        val openPending = PendingIntent.getActivity(
+            this, 2, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val alert = Notification.Builder(this, DUPLICATE_CHANNEL)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle("⚠ Bu şarkı daha önce kaydedildi")
+            .setContentText(song.displayName())
+            .setStyle(Notification.BigTextStyle().bigText(message))
+            .setContentIntent(openPending)
+            .setAutoCancel(true)
+            .build()
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.notify(DUPLICATE_NOTIFICATION_ID, alert)
+        manager.notify(NOTIFICATION_ID, notification("Tekrar bulundu. Kayıt devam ediyor."))
+    }
+
     private fun report(message: String) {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putString(EXTRA_STATUS, message).apply()
@@ -128,6 +155,10 @@ class CaptureService : Service() {
         var signalDetected = false
         val seenSongs = linkedMapOf<String, SongInfo>()
         var lastSongCheck = 0L
+        var duplicateDetected = false
+        val history = RecordingHistory(this)
+        // Recover names from older MP3 files even when upgrading requires an uninstall.
+        runCatching { history.importExistingRecordings() }
 
         try {
             val manager = getSystemService(MediaProjectionManager::class.java)
@@ -185,7 +216,13 @@ class CaptureService : Service() {
                         lastSongCheck = now
                         PlayingSong.current(this)?.let { song ->
                             val key = song.sourcePackage + "|" + song.title + "|" + song.artist
-                            seenSongs[key] = song
+                            if (!seenSongs.containsKey(key)) {
+                                seenSongs[key] = song
+                                runCatching { history.firstMatch(song) }.getOrNull()?.let { match ->
+                                    duplicateDetected = true
+                                    warnPreviouslySaved(song, match)
+                                }
+                            }
                         }
                     }
                     val count = recorder.read(
@@ -221,12 +258,18 @@ class CaptureService : Service() {
                 }
                 val hasMultipleSongs = seenSongs.size > 1
                 val songForFilename = if (seenSongs.size == 1) seenSongs.values.first() else null
+                val alreadySaved = songForFilename != null &&
+                    runCatching { history.firstMatch(songForFilename) != null }.getOrDefault(false)
+                val isRepeat = duplicateDetected || alreadySaved
                 report("Kayıt MP3'e dönüştürülüyor (320 kb/sn)...")
                 val filename = try {
                     Mp3Writer.write(contentResolver, recordingFile, songForFilename, hasMultipleSongs)
                 } catch (conversionError: Exception) {
                     // Preserve the recording instead of silently discarding it on encoder failure.
                     val backupFile = saveWav(recordingFile, bytesWritten)
+                    runCatching {
+                        history.addSaved(backupFile, songForFilename, hasMultipleSongs, isRepeat)
+                    }
                     report(
                         "MP3 dönüşümü başarısız: " +
                         (conversionError.message ?: conversionError.javaClass.simpleName) +
@@ -234,13 +277,19 @@ class CaptureService : Service() {
                     )
                     return
                 }
+                val logged = runCatching {
+                    history.addSaved(filename, songForFilename, hasMultipleSongs, isRepeat)
+                }.isSuccess
                 if (signalDetected) {
                     val suffix = when {
                         hasMultipleSongs -> " (Birden fazla şarkı algılandı; kayıt tek dosya.)"
                         songForFilename == null -> " (Şarkı adı bulunamadı; bildirim erişimini kontrol et.)"
                         else -> ""
                     }
-                    report("MP3 kaydedildi: Müzik/MusicCaptureTest/" + filename + suffix)
+                    val duplicateLabel = if (isRepeat) " ⚠ Tekrar kayıt." else ""
+                    val logLabel = if (!logged) " (Geçmişe yazılamadı.)" else ""
+                    report("MP3 kaydedildi: Müzik/MusicCaptureTest/" + filename +
+                        duplicateLabel + suffix + logLabel)
                 } else {
                     report(
                         "Sessiz MP3 kaydı: " + filename +
