@@ -18,13 +18,12 @@ import java.util.Locale
  */
 object Mp3Writer {
     private const val SAMPLE_RATE = 44100
-    private const val BITRATE_KBPS = 192
+    private const val BITRATE_KBPS = 320
     private const val FOLDER = "Music/MusicCaptureTest"
     private const val READ_BYTES = 16384 // Exact multiple of 4 (stereo 16-bit sample frame)
 
-    fun write(resolver: ContentResolver, pcm: File): String {
-        val filename = "MusicCapture_" +
-            SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".mp3"
+    fun write(resolver: ContentResolver, pcm: File, song: SongInfo?, multipleSongs: Boolean): String {
+        val filename = PlayingSong.safeFilename(song, multipleSongs) + ".mp3"
         val values = ContentValues().apply {
             put(MediaStore.Audio.Media.DISPLAY_NAME, filename)
             put(MediaStore.Audio.Media.MIME_TYPE, "audio/mpeg")
