@@ -8,6 +8,8 @@ import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.View
+import android.widget.ScrollView
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -20,11 +22,15 @@ class MainActivity : Activity() {
 
     private lateinit var statusText: TextView
     private lateinit var songStatusText: TextView
+    private lateinit var historyButton: Button
+    private lateinit var historyText: TextView
+    private var historyVisible = false
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             statusText.text = intent?.getStringExtra(CaptureService.EXTRA_STATUS)
                 ?: "Durum bilgisi alınamadı."
+            refreshHistory()
         }
     }
 
@@ -91,6 +97,22 @@ class MainActivity : Activity() {
             setPadding(4, 8, 4, 8)
         }
 
+        historyText = TextView(this).apply {
+            textSize = 13f
+            visibility = View.GONE
+            setPadding(8, 12, 8, 18)
+        }
+        historyButton = Button(this).apply {
+            text = "Kayıt geçmişi"
+            textSize = 13f
+            isAllCaps = false
+            setOnClickListener {
+                historyVisible = !historyVisible
+                historyText.visibility = if (historyVisible) View.VISIBLE else View.GONE
+                refreshHistory()
+            }
+        }
+
         // Put both compact controls at the very top, side by side, about half-width each.
         val density = resources.displayMetrics.density
         val buttons = LinearLayout(this).apply {
@@ -108,9 +130,30 @@ class MainActivity : Activity() {
         layout.addView(statusText)
         layout.addView(songPermissionButton)
         layout.addView(songStatusText)
+        layout.addView(historyButton)
+        layout.addView(historyText)
         layout.addView(title)
         layout.addView(description)
-        setContentView(layout)
+        setContentView(ScrollView(this).apply { addView(layout) })
+        // Index files created by previous APK versions on a worker thread.
+        Thread {
+            runCatching { RecordingHistory(this).use { it.importExistingRecordings() } }
+            runOnUiThread { if (!isFinishing && !isDestroyed) refreshHistory() }
+        }.start()
+    }
+
+    private fun refreshHistory() {
+        runCatching {
+            RecordingHistory(this).use { history ->
+                historyButton.text = "Kayıt geçmişi (" + history.count() + ") " +
+                    if (historyVisible) "▲" else "▼"
+                if (historyVisible) {
+                    historyText.text = "Son 20 kayıt:\n\n" + history.formattedHistory(20)
+                }
+            }
+        }.onFailure {
+            historyText.text = "Kayıt geçmişi okunamadı: " + (it.message ?: "bilinmeyen hata")
+        }
     }
 
     private fun checkPermissionAndStart() {
@@ -159,6 +202,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (::historyButton.isInitialized) refreshHistory()
         val allowed = PlayingSong.hasPermission(this)
         val playing = if (allowed) PlayingSong.current(this) else null
         songStatusText.text = when {
