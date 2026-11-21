@@ -30,46 +30,68 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(40, 60, 40, 30)
+            setPadding(12, 8, 12, 24)
         }
 
         val title = TextView(this).apply {
             text = "Dahili Ses Yakalama"
-            textSize = 26f
+            textSize = 20f
         }
         val description = TextView(this).apply {
-            text = "\nTelefon mikrofonunu değil, diğer uygulamaların izin verdiği oynatma sesini kaydeder.\n\n" +
+            text = "\nMikrofon değil, izin verilen dahili oynatma sesi kaydedilir.\n\n" +
                 "1. Yakalamayı Başlat'a bas.\n" +
                 "2. Android'in izin ekranını onayla.\n" +
                 "3. Başka bir uygulamada ses oynat.\n" +
                 "4. Ses Test'e dön ve Durdur'a bas.\n\n" +
-                "Çıktı: Müzik/MusicCaptureTest klasöründe WAV dosyası.\n"
-            textSize = 16f
+                "Çıktı: Müzik/MusicCaptureTest klasöründe 192 kb/sn MP3.\n"
+            textSize = 14f
         }
         statusText = TextView(this).apply {
             textSize = 18f
             text = "Henüz kayıt başlatılmadı."
-            setPadding(0, 24, 0, 24)
+            setPadding(4, 16, 4, 12)
         }
 
         val startButton = Button(this).apply {
-            text = "YAKALAMAYI BAŞLAT"
+            text = "Başlat"
+            textSize = 12f
+            isAllCaps = false
+            minHeight = 0
+            minimumHeight = 0
+            setPadding(0, 0, 0, 0)
             setOnClickListener { checkPermissionAndStart() }
         }
         val stopButton = Button(this).apply {
-            text = "DURDUR VE KAYDET"
+            text = "Durdur / Kaydet"
+            textSize = 12f
+            isAllCaps = false
+            minHeight = 0
+            minimumHeight = 0
+            setPadding(0, 0, 0, 0)
             setOnClickListener {
                 startService(Intent(this@MainActivity, CaptureService::class.java)
                     .setAction(CaptureService.ACTION_STOP))
-                statusText.text = "Kayıt durduruluyor, WAV dosyası hazırlanıyor..."
+                statusText.text = "Kayıt durduruluyor, MP3 hazırlanıyor..."
             }
         }
 
+        // Put both compact controls at the very top, side by side, about half-width each.
+        val density = resources.displayMetrics.density
+        val buttons = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val compactHeight = (40f * density).toInt()
+        val gap = (3f * density).toInt()
+        buttons.addView(startButton, LinearLayout.LayoutParams(0, compactHeight, 1f).apply {
+            setMargins(0, 0, gap, 0)
+        })
+        buttons.addView(stopButton, LinearLayout.LayoutParams(0, compactHeight, 1f).apply {
+            setMargins(gap, 0, 0, 0)
+        })
+        layout.addView(buttons)
+        layout.addView(statusText)
         layout.addView(title)
         layout.addView(description)
-        layout.addView(startButton)
-        layout.addView(stopButton)
-        layout.addView(statusText)
         setContentView(layout)
     }
 
