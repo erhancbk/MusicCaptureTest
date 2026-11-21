@@ -38,7 +38,7 @@ object Mp3Writer {
             resolver.openOutputStream(uri)?.use { output ->
                 val gf = Jlame.lame_init()
                 try {
-                    check(gf.lame_set_num_channels(2)) { "Stereo kodlayıcı ayarlanamadı." }
+                    check(!gf.lame_set_num_channels(2)) { "Stereo kodlayıcı ayarlanamadı." }
                     check(gf.lame_set_out_samplerate(SAMPLE_RATE) == 0) {
                         "MP3 örnekleme hızı ayarlanamadı."
                     }
