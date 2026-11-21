@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -18,6 +19,7 @@ class MainActivity : Activity() {
     }
 
     private lateinit var statusText: TextView
+    private lateinit var songStatusText: TextView
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -39,11 +41,12 @@ class MainActivity : Activity() {
         }
         val description = TextView(this).apply {
             text = "\nMikrofon değil, izin verilen dahili oynatma sesi kaydedilir.\n\n" +
-                "1. Yakalamayı Başlat'a bas.\n" +
+                "1. Başlat'a bas.\n" +
                 "2. Android'in izin ekranını onayla.\n" +
                 "3. Başka bir uygulamada ses oynat.\n" +
                 "4. Ses Test'e dön ve Durdur'a bas.\n\n" +
-                "Çıktı: Müzik/MusicCaptureTest klasöründe 192 kb/sn MP3.\n"
+                "Çıktı: Müzik/MusicCaptureTest klasöründe 320 kb/sn MP3.\n" +
+                "Şarkı adı için aşağıdaki Bildirim erişimi ayarını aç.\n"
             textSize = 14f
         }
         statusText = TextView(this).apply {
@@ -75,6 +78,19 @@ class MainActivity : Activity() {
             }
         }
 
+        val songPermissionButton = Button(this).apply {
+            text = "Şarkı adını etkinleştir (Bildirim erişimi)"
+            textSize = 12f
+            isAllCaps = false
+            setOnClickListener {
+                startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            }
+        }
+        songStatusText = TextView(this).apply {
+            textSize = 14f
+            setPadding(4, 8, 4, 8)
+        }
+
         // Put both compact controls at the very top, side by side, about half-width each.
         val density = resources.displayMetrics.density
         val buttons = LinearLayout(this).apply {
@@ -90,6 +106,8 @@ class MainActivity : Activity() {
         })
         layout.addView(buttons)
         layout.addView(statusText)
+        layout.addView(songPermissionButton)
+        layout.addView(songStatusText)
         layout.addView(title)
         layout.addView(description)
         setContentView(layout)
@@ -137,6 +155,17 @@ class MainActivity : Activity() {
             .putExtra(CaptureService.EXTRA_RESULT_DATA, data)
         startForegroundService(startIntent)
         statusText.text = "Ses yakalama başlatılıyor..."
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val allowed = PlayingSong.hasPermission(this)
+        val playing = if (allowed) PlayingSong.current(this) else null
+        songStatusText.text = when {
+            !allowed -> "Şarkı adı özelliği kapalı. Yukarıdaki düğmeyle 'Ses Test - Şarkı Adı' erişimini aç."
+            playing != null -> "Algılanan şarkı: " + playing.displayName()
+            else -> "Şarkı erişimi açık. Müzik çalarken başlık otomatik algılanacak."
+        }
     }
 
     override fun onStart() {
