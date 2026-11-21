@@ -23,6 +23,16 @@ jobs:
           gradle-version: '8.9'
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
+      - name: Verify APK signing and package
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          echo "APK size:"; ls -lh "$APK"
+          echo "APK signature verification:"
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          echo "Package metadata:"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -name aapt | sort -V | tail -n 1)
+          "$AAPT" dump badging "$APK" | head -n 12
       - name: Rename APK
         run: cp app/build/outputs/apk/debug/app-debug.apk SesTest-debug.apk
       - name: Upload APK artifact
