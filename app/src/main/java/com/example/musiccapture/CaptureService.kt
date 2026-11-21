@@ -124,9 +124,12 @@ class CaptureService : Service() {
             .setContentIntent(openPending)
             .setAutoCancel(true)
             .build()
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(DUPLICATE_NOTIFICATION_ID, alert)
-        manager.notify(NOTIFICATION_ID, notification("Tekrar bulundu. Kayıt devam ediyor."))
+        // Notification permission/settings may block alerts. Recording must never stop.
+        runCatching {
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.notify(DUPLICATE_NOTIFICATION_ID, alert)
+            manager.notify(NOTIFICATION_ID, notification("Tekrar bulundu. Kayıt devam ediyor."))
+        }
     }
 
     private fun report(message: String) {
