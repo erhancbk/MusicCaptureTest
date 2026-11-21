@@ -1,34 +1,30 @@
-# MusicCaptureTest / Ses Test v1.3
+# MusicCaptureTest / Ses Test v1.4
 
-Samsung Galaxy Note 10+ (Android 12) üzerinde dahili oynatma sesi yakalama denemesi.
+Samsung Galaxy Note 10+ (Android 12) — dahili ses yakalama ve şarkı adına göre 320 kb/sn MP3 kayıt.
 
-## Ne yapar?
-- AudioPlaybackCaptureConfiguration ile mikrofon yerine uygulamaların **izin verdiği** oynatma sesini yakalar.
-- Her oturumda Android'in resmi MediaProjection iznini ister.
-- Başka uygulamaya geçilse bile görünür bildirimle ses kaydını sürdürür.
-- Durdur / Kaydet sonrasında Music/MusicCaptureTest klasöründe gerçek 192 kb/sn stereo MP3 oluşturur; MP3 dönüşüm hatasında kayıt kaybolmasın diye WAV yedeği kaydeder.
-- Sessiz sinyal algılandıysa uygulama bunu açıkça belirtir.
+## Kullanım
+1. Uygulamayı açın. Şarkı adına göre kayıt için **Şarkı adını etkinleştir (Bildirim erişimi)** düğmesine basın.
+2. Android ayarlarında **Ses Test - Şarkı Adı** için bildirim erişimini etkinleştirin. Uygulama sadece Android medya oturumlarının başlık/sanatçı bilgisini okumak için erişimi kullanır; bildirimleri kaydetmez veya yüklemez.
+3. **Başlat** düğmesine basıp Android ekran/ses yakalama iznini onaylayın.
+4. İzin veren bir uygulamada bir şarkı çalın.
+5. Uygulamaya dönüp **Durdur / Kaydet** düğmesine basın.
+6. Samsung **Dosyalarım → Dahili depolama → Music → MusicCaptureTest** dizinine gidin.
 
-## Sınırlar
-- Spotify / YouTube Music gibi uygulamalar seslerinin yakalanmasına izin vermeyebilir.
-- Koruma veya uygulama izinlerini aşmaya çalışmaz.
-- Otomatik parça ayırma henüz yoktur. MP3 LAME Java kodlayıcısı ile kayıt bitiminde hazırlanır.
-- Müzik haklarına uygun içeriklerle kullanın.
+## MP3 adı ve kalite
+- Stereo 44.1 kHz, **320 kb/sn CBR MP3** (Java LAME codec).
+- Android MediaSession metadata mevcutsa örn. `Sanatçı - Şarkı_20261121_221000.mp3` olarak kaydeder.
+- Şarkı başlığı paylaşılmıyorsa `MusicCapture_<tarih_saat>.mp3` olur.
+- Tek kayıt esnasında birden fazla şarkı algılanırsa yanlış adlandırmayı önlemek için `MusicCapture_MultiTrack_<tarih_saat>.mp3` olur. **Henüz otomatik olarak parçalara bölmez.**
+- Sesi 320 kb/sn kodlamak önceki düşük kaliteli/sıkıştırılmış ses kaynağını iyileştirmez. Sadece MP3 yeniden kodlama kaybını azaltabilir.
+- MP3 dönüştürmesi hata verirse kayıt kaybolmaması için WAV yedeği oluşturulur.
+- Kayıtlar yalnızca telefona yerel kaydedilir; ses veya metadata çevrimiçi bir servise gönderilmez.
 
-## APK
-GitHub -> Actions -> Build APK -> en son başarılı run -> SesTest-debug-apk ZIP dosyasından APK'yi çıkarıp yükleyin. Kurulu önceki sürümün üzerine aynı applicationId ile yüklenebilir; imza değişirse önce eski test sürümünü kaldırmanız gerekebilir.
+## Teknik sınırlar
+- Android 10+ AudioPlaybackCaptureConfiguration kullanır, mikrofon kaydetmez.
+- Kaynak uygulamanın Android dahili ses kaydına izin vermesi gerekir. Korumayı aşmaz.
+- Başlık tanıma çevrimiçi ses tanıma değildir, yalnızca uygulamanın MediaSession başlığıdır. Bazı uygulamalar bu bilgiyi sunmayabilir.
+- Bildirim erişimi kapsamlı bir Android iznidir; isteğe bağlıdır ve Android ayarlarından geri alınabilir.
+- Kullanımınızda müzik haklarına uyun.
 
-## Test
-1. Ses Test uygulamasını açın ve Başlat seçin.
-2. Android'in Ses kaydetme iznine (API gerekliliği; kaynak mikrofon değildir) ve ekran paylaşımı onayına izin verin.
-3. Dahili ses yakalamaya izin veren bir uygulamada ses çalın.
-4. Ses Test'e dönün; Durdur / Kaydet seçin.
-5. Samsung Dosyalarım -> Dahili depolama -> Music -> MusicCaptureTest klasörünü kontrol edin.
-
-Android 10+ zorunludur.
-
-## v1.3 arayüz
-- Başlat ve Durdur / Kaydet düğmeleri üst sırada, yan yana, yarım genişlikte ve 40 dp yüksekliğinde.
-- Kaydın bitmesinin ardından MP3 dönüştürmesi işlem süresine göre biraz zaman alabilir.
-- Android'in diğer uygulamaların sesi için tanımladığı paylaşım kısıtlamaları aynen geçerlidir.
-- MP3 kodlayıcı: io.vacco.jlame:jlame:3.100.2 (GPL lisansı).
+## Derleme
+GitHub Actions -> Build APK -> başarılı workflow -> SesTest-debug-apk artifact.
