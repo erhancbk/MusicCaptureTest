@@ -2,6 +2,7 @@ package com.example.musiccapture
 
 import android.content.ContentResolver
 import android.content.ContentValues
+import android.net.Uri
 import android.provider.MediaStore
 import io.vacco.libmp3lame.Jlame
 import java.io.File
@@ -16,13 +17,15 @@ import java.util.Locale
  * Encodes the 44.1 kHz, 16-bit little-endian stereo PCM capture to a real MPEG Layer III file.
  * Runs after capture has stopped; never blocks AudioRecord's recording thread.
  */
+data class SavedRecording(val filename: String, val uri: Uri)
+
 object Mp3Writer {
     private const val SAMPLE_RATE = 44100
     private const val BITRATE_KBPS = 320
     private const val FOLDER = "Music/MusicCaptureTest"
     private const val READ_BYTES = 16384 // Exact multiple of 4 (stereo 16-bit sample frame)
 
-    fun write(resolver: ContentResolver, pcm: File, song: SongInfo?, multipleSongs: Boolean): String {
+    fun write(resolver: ContentResolver, pcm: File, song: SongInfo?, multipleSongs: Boolean): SavedRecording {
         val filename = PlayingSong.safeFilename(song, multipleSongs) + ".mp3"
         val values = ContentValues().apply {
             put(MediaStore.Audio.Media.DISPLAY_NAME, filename)
@@ -95,7 +98,7 @@ object Mp3Writer {
             check(resolver.update(uri, values, null, null) > 0) {
                 "MP3 dosyası görünür hâle getirilemedi."
             }
-            return filename
+            return SavedRecording(filename, uri)
         } catch (e: Exception) {
             resolver.delete(uri, null, null)
             throw e
