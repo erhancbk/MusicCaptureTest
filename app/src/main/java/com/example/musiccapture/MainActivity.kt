@@ -2,6 +2,7 @@ package com.example.musiccapture
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.*
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
@@ -29,6 +30,7 @@ class MainActivity : Activity() {
     private lateinit var historyButton: Button
     private lateinit var historyText: TextView
     private lateinit var importStatusText: TextView
+    private lateinit var deleteDuplicateButton: Button
     private var historyVisible = false
 
     private val statusReceiver = object : BroadcastReceiver() {
@@ -46,6 +48,7 @@ class MainActivity : Activity() {
                 progressText.text = intent.getStringExtra(CaptureService.EXTRA_PROGRESS)
                     ?: "Akıllı bitiş: durum bilgisi bekleniyor"
             }
+            refreshDeleteDuplicateButton()
         }
     }
 
@@ -121,6 +124,14 @@ class MainActivity : Activity() {
             }
         }
 
+        deleteDuplicateButton = Button(this).apply {
+            text = "⚠ Bu yeni kaydı sil"
+            textSize = 13f
+            isAllCaps = false
+            visibility = View.GONE
+            setOnClickListener { confirmDuplicateDeletion() }
+        }
+
         val songPermissionButton = Button(this).apply {
             text = "Şarkı adını etkinleştir (Bildirim erişimi)"
             textSize = 12f
@@ -179,6 +190,7 @@ class MainActivity : Activity() {
         layout.addView(autoStopCheck)
         layout.addView(progressText)
         layout.addView(statusText)
+        layout.addView(deleteDuplicateButton)
         layout.addView(songPermissionButton)
         layout.addView(songStatusText)
         layout.addView(historyButton)
@@ -188,11 +200,58 @@ class MainActivity : Activity() {
         layout.addView(title)
         layout.addView(description)
         setContentView(ScrollView(this).apply { addView(layout) })
+        refreshDeleteDuplicateButton()
+        if (intent?.getBooleanExtra(CaptureService.EXTRA_CONFIRM_DISCARD, false) == true) {
+            intent.removeExtra(CaptureService.EXTRA_CONFIRM_DISCARD)
+            confirmDuplicateDeletion()
+        }
         // Index files created by previous APK versions on a worker thread.
         Thread {
             runCatching { RecordingHistory(this).use { it.importExistingRecordings() } }
             runOnUiThread { if (!isFinishing && !isDestroyed) refreshHistory() }
         }.start()
+    }
+
+    private fun refreshDeleteDuplicateButton() {
+        if (!::deleteDuplicateButton.isInitialized) return
+        val prefs = getSharedPreferences(CaptureService.PREFS, MODE_PRIVATE)
+        deleteDuplicateButton.visibility =
+            if (prefs.getBoolean(CaptureService.PREF_DUPLICATE, false)) View.VISIBLE
+            else View.GONE
+    }
+
+    private fun confirmDuplicateDeletion() {
+        val prefs = getSharedPreferences(CaptureService.PREFS, MODE_PRIVATE)
+        if (!prefs.getBoolean(CaptureService.PREF_DUPLICATE, false)) {
+            statusText.text = "Silinecek yeni mükerrer kayıt bulunamadı."
+            refreshDeleteDuplicateButton()
+            return
+        }
+        val currentSession = prefs.getString(CaptureService.EXTRA_SESSION, null)
+        if (currentSession.isNullOrBlank()) return
+        AlertDialog.Builder(this)
+            .setTitle("Yeni mükerrer kayıt silinsin mi?")
+            .setMessage(
+                "Bu oturumun yeni kaydı silinecek. Kayıt devam ediyorsa durdurulup " +
+                "kaydedilmeyecek. MP3 zaten kaydedildiyse sadece bu yeni dosya " +
+                "silinecek. Önceden arşivlenen ilk şarkı korunacak."
+            )
+            .setNegativeButton("Vazgeç", null)
+            .setPositiveButton("Yeni kaydı sil") { _, _ ->
+                startService(Intent(this, CaptureService::class.java)
+                    .setAction(CaptureService.ACTION_DISCARD_DUPLICATE)
+                    .putExtra(CaptureService.EXTRA_SESSION, currentSession))
+                statusText.text = "Yeni mükerrer kayıt silme işlemi başlatıldı..."
+            }
+            .show()
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        if (intent?.getBooleanExtra(CaptureService.EXTRA_CONFIRM_DISCARD, false) == true) {
+            intent.removeExtra(CaptureService.EXTRA_CONFIRM_DISCARD)
+            confirmDuplicateDeletion()
+        }
     }
 
     private fun refreshHistory() {
@@ -294,6 +353,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (::historyButton.isInitialized) refreshHistory()
+        refreshDeleteDuplicateButton()
         val allowed = PlayingSong.hasPermission(this)
         val playing = if (allowed) PlayingSong.current(this) else null
         songStatusText.text = when {
@@ -315,6 +375,7 @@ class MainActivity : Activity() {
         val last = getSharedPreferences(CaptureService.PREFS, MODE_PRIVATE)
             .getString(CaptureService.EXTRA_STATUS, null)
         if (last != null) statusText.text = last
+        refreshDeleteDuplicateButton()
         val previousProgress = getSharedPreferences(CaptureService.PREFS, MODE_PRIVATE)
             .getString(CaptureService.EXTRA_PROGRESS, null)
         if (previousProgress != null) progressText.text = previousProgress
