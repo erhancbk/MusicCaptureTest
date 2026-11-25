@@ -108,6 +108,10 @@ class RecordingHistory(context: Context) :
         )
     }
 
+    /** Remove a history entry only after its exact saved MediaStore file was deleted. */
+    fun removeFile(filename: String): Int =
+        writableDatabase.delete("recordings", "filename = ?", arrayOf(filename))
+
     fun count(): Int {
         readableDatabase.rawQuery("SELECT COUNT(*) FROM recordings", null).use { cursor ->
             return if (cursor.moveToFirst()) cursor.getInt(0) else 0
