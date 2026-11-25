@@ -11,6 +11,7 @@ import android.provider.Settings
 import android.view.View
 import android.widget.ScrollView
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -22,6 +23,8 @@ class MainActivity : Activity() {
     }
 
     private lateinit var statusText: TextView
+    private lateinit var progressText: TextView
+    private lateinit var autoStopCheck: CheckBox
     private lateinit var songStatusText: TextView
     private lateinit var historyButton: Button
     private lateinit var historyText: TextView
@@ -30,9 +33,19 @@ class MainActivity : Activity() {
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            statusText.text = intent?.getStringExtra(CaptureService.EXTRA_STATUS)
-                ?: "Durum bilgisi alınamadı."
-            refreshHistory()
+            if (intent?.hasExtra(CaptureService.EXTRA_STATUS) == true) {
+                val message = intent.getStringExtra(CaptureService.EXTRA_STATUS)
+                    ?: "Durum bilgisi alınamadı."
+                statusText.text = message
+                if (message.contains("kaydedildi", ignoreCase = true) ||
+                    message.contains("Yedek WAV", ignoreCase = true)) {
+                    refreshHistory()
+                }
+            }
+            if (intent?.hasExtra(CaptureService.EXTRA_PROGRESS) == true) {
+                progressText.text = intent.getStringExtra(CaptureService.EXTRA_PROGRESS)
+                    ?: "Akıllı bitiş: durum bilgisi bekleniyor"
+            }
         }
     }
 
@@ -52,7 +65,8 @@ class MainActivity : Activity() {
                 "1. Başlat'a bas.\n" +
                 "2. Android'in izin ekranını onayla.\n" +
                 "3. Başka bir uygulamada ses oynat.\n" +
-                "4. Ses Test'e dön ve Durdur'a bas.\n\n" +
+                "4. Otomatik bitiş açıksa şarkı sonunda MP3 hazırlanır; " +
+                "gerekirse Durdur / Kaydet'e bas.\n\n" +
                 "Çıktı: Müzik/MusicCaptureTest klasöründe 320 kb/sn MP3.\n" +
                 "Şarkı adı için aşağıdaki Bildirim erişimi ayarını aç.\n"
             textSize = 14f
@@ -61,6 +75,27 @@ class MainActivity : Activity() {
             textSize = 18f
             text = "Henüz kayıt başlatılmadı."
             setPadding(4, 16, 4, 12)
+        }
+
+        autoStopCheck = CheckBox(this).apply {
+            text = "Şarkı bitince otomatik durdur ve kaydet"
+            textSize = 14f
+            isChecked = getSharedPreferences(CaptureService.PREFS, MODE_PRIVATE)
+                .getBoolean(CaptureService.PREF_AUTO_STOP, true)
+            setOnCheckedChangeListener { _, enabled ->
+                getSharedPreferences(CaptureService.PREFS, MODE_PRIVATE).edit()
+                    .putBoolean(CaptureService.PREF_AUTO_STOP, enabled).apply()
+                if (!enabled) {
+                    progressText.text = "Otomatik bitiş kapalı (sonraki kayıt için)"
+                } else {
+                    progressText.text = "Otomatik bitiş açık (sonraki kayıt için)"
+                }
+            }
+        }
+        progressText = TextView(this).apply {
+            textSize = 14f
+            setPadding(4, 8, 4, 6)
+            text = "Şarkı süresi varsa otomatik sonlandırma yapılır."
         }
 
         val startButton = Button(this).apply {
@@ -141,6 +176,8 @@ class MainActivity : Activity() {
             setMargins(gap, 0, 0, 0)
         })
         layout.addView(buttons)
+        layout.addView(autoStopCheck)
+        layout.addView(progressText)
         layout.addView(statusText)
         layout.addView(songPermissionButton)
         layout.addView(songStatusText)
@@ -249,6 +286,7 @@ class MainActivity : Activity() {
             .setAction(CaptureService.ACTION_START)
             .putExtra(CaptureService.EXTRA_RESULT_CODE, resultCode)
             .putExtra(CaptureService.EXTRA_RESULT_DATA, data)
+            .putExtra(CaptureService.EXTRA_AUTO_STOP, autoStopCheck.isChecked)
         startForegroundService(startIntent)
         statusText.text = "Ses yakalama başlatılıyor..."
     }
@@ -277,6 +315,9 @@ class MainActivity : Activity() {
         val last = getSharedPreferences(CaptureService.PREFS, MODE_PRIVATE)
             .getString(CaptureService.EXTRA_STATUS, null)
         if (last != null) statusText.text = last
+        val previousProgress = getSharedPreferences(CaptureService.PREFS, MODE_PRIVATE)
+            .getString(CaptureService.EXTRA_PROGRESS, null)
+        if (previousProgress != null) progressText.text = previousProgress
     }
 
     override fun onStop() {
