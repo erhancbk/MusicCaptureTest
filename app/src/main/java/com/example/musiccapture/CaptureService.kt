@@ -23,6 +23,12 @@ class CaptureService : Service() {
     companion object {
         const val ACTION_START = "com.erhancbk.sestest.START"
         const val ACTION_STOP = "com.erhancbk.sestest.STOP"
+        const val ACTION_DISCARD_DUPLICATE = "com.erhancbk.sestest.DISCARD_DUPLICATE"
+        const val EXTRA_SESSION = "currentRecordingSession"
+        const val PREF_DUPLICATE = "duplicateNeedsDecision"
+        const val PREF_SAVED_URI = "duplicateSavedUri"
+        const val PREF_SAVED_NAME = "duplicateSavedFilename"
+        const val EXTRA_CONFIRM_DISCARD = "confirmDiscardDuplicate"
         const val ACTION_STATUS = "com.erhancbk.sestest.STATUS"
         const val EXTRA_RESULT_CODE = "resultCode"
         const val EXTRA_RESULT_DATA = "resultData"
@@ -41,7 +47,9 @@ class CaptureService : Service() {
 
     @Volatile private var shouldRecord = false
     @Volatile private var activeRecorder: AudioRecord? = null
-    private var worker: Thread? = null
+    @Volatile private var worker: Thread? = null
+    @Volatile private var discardRequested = false
+    @Volatile private var sessionId = ""
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -60,6 +68,10 @@ class CaptureService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             requestStop()
+            return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_DISCARD_DUPLICATE) {
+            discardDuplicate(intent.getStringExtra(EXTRA_SESSION))
             return START_NOT_STICKY
         }
         if (intent?.action != ACTION_START) return START_NOT_STICKY
@@ -87,6 +99,14 @@ class CaptureService : Service() {
         }
 
         shouldRecord = true
+        discardRequested = false
+        sessionId = UUID.randomUUID().toString()
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putString(EXTRA_SESSION, sessionId)
+            .putBoolean(PREF_DUPLICATE, false)
+            .remove(PREF_SAVED_URI)
+            .remove(PREF_SAVED_NAME)
+            .apply()
         val automatic = intent.getBooleanExtra(
             EXTRA_AUTO_STOP, getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(PREF_AUTO_STOP, true)
         )
@@ -114,12 +134,87 @@ class CaptureService : Service() {
             .build()
     }
 
+    private fun showDuplicateDeleteAction() {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putBoolean(PREF_DUPLICATE, true).apply()
+        // Empty status broadcasts also refresh the delete button in the open activity.
+        sendBroadcast(Intent(ACTION_STATUS).setPackage(packageName)
+            .putExtra(EXTRA_SESSION, sessionId))
+    }
+
+    private fun clearDuplicateDeleteAction() {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putBoolean(PREF_DUPLICATE, false)
+            .remove(PREF_SAVED_URI)
+            .remove(PREF_SAVED_NAME)
+            .apply()
+        sendBroadcast(Intent(ACTION_STATUS).setPackage(packageName)
+            .putExtra(EXTRA_SESSION, sessionId))
+        runCatching {
+            getSystemService(NotificationManager::class.java)
+                .cancel(DUPLICATE_NOTIFICATION_ID)
+        }
+    }
+
+    private fun discardDuplicate(requestedSession: String?) {
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        if (requestedSession.isNullOrBlank() ||
+            requestedSession != prefs.getString(EXTRA_SESSION, "") ||
+            !prefs.getBoolean(PREF_DUPLICATE, false)
+        ) {
+            report("Silinecek güncel mükerrer kayıt bulunamadı. Eski kayıtlar korundu.")
+            if (worker == null) stopSelf()
+            return
+        }
+
+        if (worker != null) {
+            // Recording or conversion is active. The worker skips saving, or removes its
+            // own newly created file by URI if encoding was already in progress.
+            discardRequested = true
+            report("Yeni mükerrer kayıt siliniyor; önceki kayıt korunuyor...")
+            requestStop()
+            return
+        }
+
+        val uriString = prefs.getString(PREF_SAVED_URI, null)
+        val filename = prefs.getString(PREF_SAVED_NAME, null)
+        if (uriString.isNullOrBlank() || filename.isNullOrBlank()) {
+            // No saved output, for example the user discarded before encoding.
+            clearDuplicateDeleteAction()
+            report("Kaydedilecek yeni kopya bulunamadı. Önceki dosya korundu.")
+            stopSelf()
+            return
+        }
+
+        try {
+            val deleted = contentResolver.delete(android.net.Uri.parse(uriString), null, null)
+            if (deleted <= 0) error("Dosya artık bulunamıyor veya silme izni yok.")
+            RecordingHistory(this).use { it.removeFile(filename) }
+            clearDuplicateDeleteAction()
+            report("Yeni mükerrer MP3 silindi: " + filename + ". Önceki kayıt korundu.")
+        } catch (e: Exception) {
+            report("Yeni kopya silinemedi: " + (e.message ?: "bilinmeyen hata"))
+        } finally {
+            stopSelf()
+        }
+    }
+
     private fun warnPreviouslySaved(song: SongInfo, match: RecordingHistory.Entry) {
+        showDuplicateDeleteAction()
         val message = "⚠ Daha önce kaydedildi: " + song.displayName() +
             ". Önceki dosya: " + match.filename + ". Kayıt devam ediyor."
         report(message)
         val openPending = PendingIntent.getActivity(
             this, 2, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val confirmIntent = Intent(this, MainActivity::class.java).apply {
+            putExtra(EXTRA_CONFIRM_DISCARD, true)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val confirmPending = PendingIntent.getActivity(
+            this, 3, confirmIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val alert = Notification.Builder(this, DUPLICATE_CHANNEL)
@@ -128,6 +223,7 @@ class CaptureService : Service() {
             .setContentText(song.displayName())
             .setStyle(Notification.BigTextStyle().bigText(message))
             .setContentIntent(openPending)
+            .addAction(android.R.drawable.ic_menu_delete, "Yeni kaydı sil", confirmPending)
             .setAutoCancel(true)
             .build()
         // Notification permission/settings may block alerts. Recording must never stop.
