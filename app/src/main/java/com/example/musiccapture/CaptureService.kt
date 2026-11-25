@@ -266,7 +266,7 @@ class CaptureService : Service() {
                             playback?.takeIf {
                                 it.state == android.media.session.PlaybackState.STATE_PLAYING &&
                                     smartStop?.lockedSong?.sourcePackage == it.song.sourcePackage &&
-                                    smartStop.lockedSong?.title.equals(it.song.title, ignoreCase = true)
+                                    smartStop?.lockedSong?.title?.equals(it.song.title, ignoreCase = true) == true
                             }?.song
                         } else {
                             PlayingSong.current(this)
