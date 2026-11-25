@@ -234,6 +234,27 @@ class CaptureService : Service() {
         }
     }
 
+    private fun discardGenerated(saved: SavedRecording, history: RecordingHistory): Boolean {
+        return try {
+            val deleted = contentResolver.delete(saved.uri, null, null)
+            if (deleted <= 0) error("Dosya silinemedi veya artık bulunamadı.")
+            runCatching { history.removeFile(saved.filename) }
+            clearDuplicateDeleteAction()
+            report("Yeni mükerrer kayıt silindi: " + saved.filename +
+                ". Önceden kaydedilen şarkı korundu.")
+            true
+        } catch (e: Exception) {
+            // Preserve the exact URI for a later retry; never delete the older file.
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putString(PREF_SAVED_URI, saved.uri.toString())
+                .putString(PREF_SAVED_NAME, saved.filename)
+                .putBoolean(PREF_DUPLICATE, true).apply()
+            report("Yeni dosya silinemedi: " + (e.message ?: "bilinmeyen hata") +
+                ". Uygulamadan tekrar deneyebilirsin.")
+            false
+        }
+    }
+
     private fun report(message: String) {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
             .putString(EXTRA_STATUS, message).apply()
@@ -403,6 +424,13 @@ class CaptureService : Service() {
                 }
             }
 
+            // A confirmed duplicate discard must never encode or save PCM.
+            if (discardRequested) {
+                clearDuplicateDeleteAction()
+                report("Yeni mükerrer kayıt kaydedilmeden iptal edildi. Eski MP3 korundu.")
+                return
+            }
+
             if (bytesWritten <= 0L) {
                 report("Ses verisi gelmedi; dosya oluşturulmadı.")
             } else {
@@ -421,25 +449,56 @@ class CaptureService : Service() {
                 val alreadySaved = songForFilename != null &&
                     runCatching { history.firstMatch(songForFilename) != null }.getOrDefault(false)
                 val isRepeat = duplicateDetected || alreadySaved
+                if (isRepeat) showDuplicateDeleteAction()
                 report("Kayıt MP3'e dönüştürülüyor (320 kb/sn)...")
-                val filename = try {
+                val saved = try {
                     Mp3Writer.write(contentResolver, recordingFile, songForFilename, hasMultipleSongs)
                 } catch (conversionError: Exception) {
+                    if (discardRequested) {
+                        clearDuplicateDeleteAction()
+                        report("Yeni mükerrer kayıt kaydedilmeden iptal edildi. Eski MP3 korundu.")
+                        return
+                    }
                     // Preserve the recording instead of silently discarding it on encoder failure.
-                    val backupFile = saveWav(recordingFile, bytesWritten)
+                    val backup = saveWav(recordingFile, bytesWritten)
+                    if (isRepeat) {
+                        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                            .putString(PREF_SAVED_URI, backup.uri.toString())
+                            .putString(PREF_SAVED_NAME, backup.filename)
+                            .apply()
+                    }
+                    if (discardRequested) {
+                        discardGenerated(backup, history)
+                        return
+                    }
                     runCatching {
-                        history.addSaved(backupFile, songForFilename, hasMultipleSongs, isRepeat)
+                        history.addSaved(backup.filename, songForFilename, hasMultipleSongs, isRepeat)
                     }
                     report(
                         "MP3 dönüşümü başarısız: " +
                         (conversionError.message ?: conversionError.javaClass.simpleName) +
-                        ". Yedek WAV: Müzik/MusicCaptureTest/" + backupFile
+                        ". Yedek WAV: Müzik/MusicCaptureTest/" + backup.filename
                     )
+                    return
+                }
+                val filename = saved.filename
+                if (isRepeat) {
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                        .putString(PREF_SAVED_URI, saved.uri.toString())
+                        .putString(PREF_SAVED_NAME, saved.filename)
+                        .apply()
+                }
+                if (discardRequested) {
+                    discardGenerated(saved, history)
                     return
                 }
                 val logged = runCatching {
                     history.addSaved(filename, songForFilename, hasMultipleSongs, isRepeat)
                 }.isSuccess
+                if (discardRequested) {
+                    discardGenerated(saved, history)
+                    return
+                }
                 if (signalDetected) {
                     val suffix = when {
                         hasMultipleSongs -> " (Birden fazla şarkı algılandı; kayıt tek dosya.)"
@@ -482,7 +541,7 @@ class CaptureService : Service() {
         }
     }
 
-    private fun saveWav(pcmFile: File, pcmLength: Long): String {
+    private fun saveWav(pcmFile: File, pcmLength: Long): SavedRecording {
         check(pcmLength + 36 <= 0xFFFFFFFFL) { "WAV boyutu üst sınırı aşıldı." }
         val date = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val filename = "MusicCapture_" + date + ".wav"
@@ -507,7 +566,7 @@ class CaptureService : Service() {
             resolver.delete(uri, null, null)
             throw e
         }
-        return filename
+        return SavedRecording(filename, uri)
     }
 
     private fun createWavHeader(pcmLength: Long): ByteArray {
