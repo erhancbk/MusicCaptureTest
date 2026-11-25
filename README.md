@@ -1,32 +1,42 @@
-# MusicCaptureTest / Ses Test v1.5
+# MusicCaptureTest / Ses Test v1.6
 
-Samsung Galaxy Note 10+ (Android 12): dahili ses yakalama, şarkı adına göre 320 kb/sn MP3, **kalıcı kayıt geçmişi ve tekrar uyarısı**.
+Samsung Galaxy Note 10+ (Android 12) için dahili ses yakalama ve 320 kb/sn MP3 kayıt.
 
-## Kaydetme ve tekrar uyarısı
+## Yeni: Akıllı bitiş (şarkı sonunda otomatik durdur ve kaydet)
 
-1. **Başlat** ile Android'in medya yakalama iznini verin.
-2. Müziği başlatın; **Şarkı adını etkinleştir (Bildirim erişimi)** daha önce açık olmalıdır. Bu yetki medya oturumundaki başlık/sanatçı bilgisini okumaya yarar.
-3. Şarkı adı bulunduğunda uygulama mevcut kayıt geçmişini sorgular. Aynı **sanatçı + şarkı adı** daha önce başarıyla kaydedildiyse **"Bu şarkı daha önce kaydedildi"** bildirimi ve ekranda bir uyarı gösterilir. **Kayıt kesilmez veya durdurulmaz.**
-4. **Durdur / Kaydet** ile 320 kb/sn stereo MP3 dosyası kaydedilir.
-5. Yeni kaydedilen MP3 geçmişe tarih, sanatçı, başlık, dosya adı ve tekrar işaretiyle kaydedilir. MP3 başarısız olursa WAV yedeği de geçmişe kaydedilmeye çalışılır.
-6. Uygulamada **Kayıt geçmişi (N)** düğmesiyle son 20 dosyayı ve toplam dosya sayısını görüntüleyin.
+- Ana ekrandaki **Şarkı bitince otomatik durdur ve kaydet** kutusu varsayılan olarak açık. İstenirse kapatılabilir.
+- Şarkı başladıktan sonra Android medya oturumunun sunduğu şarkı başlığını, **süreyi (duration)** ve **geçerli oynatma konumunu (position)** izler.
+- Android bir süre ve konum veriyorsa ekran üzerinde **geçen/toplam/kalan süre** gösterilir; süre sonuna yaklaşıldığında ses kaydı sonlanır, MP3'e dönüştürülür ve geçmişe eklenir.
+- Medya oturumundaki şarkı başlığı farklı bir şarkı/reklam başlığına değişirse kayıt sonlandırılır. Yeni başlık kaydedilen MP3'ün adına yazılmaz; önceki şarkının adı korunur.
+- Tekrar şarkı uyarısı ve geçmiş özellikleri korunur.
+- **Durdur / Kaydet** düğmesi her zaman çalışır. Kutuyu kapatırsanız önceki sürümlerdeki gibi manuel kayıt yapılır.
+- MP3 stereo 44.1 kHz, **320 kb/sn**. Dosyalar: **Music/MusicCaptureTest**.
 
-Dosyalar: **Dosyalarım → Dahili depolama → Music → MusicCaptureTest**
+## Kullanım
 
-## Önceki sürümlerdeki dosyalar
+1. Android ayarlarında **Ses Test - Şarkı Adı** bildirim erişiminin açık olduğundan emin olun. Bu erişim, Android medya oturumlarının bilgisini okumaya yarar.
+2. Ses Test'te **Şarkı bitince otomatik durdur ve kaydet** seçili olsun.
+3. **Başlat** düğmesine basın ve Android'in ekran/ses paylaşım onayını verin.
+4. YouTube veya başka bir uygulamada kaydetmek istediğiniz şarkıyı çalın.
+5. Uygulama ekranda şarkının süresini izler ve varsa bitişi tespit ettiğinde **otomatik durur ve MP3 kaydeder**. Manuel durdurma da mümkündür.
+6. Kaydı **Kayıt geçmişi** bölümünde ve cihazın Music/MusicCaptureTest klasöründe kontrol edin.
 
-Uygulama Music/MusicCaptureTest içindeki kayıtları otomatik taramayı dener. Daha önceki debug sürümünü kaldırıp yeni APK'yı yüklemek gerekirse Android eski ses dosyalarına erişimi sınırlayabilir. Böyle bir durumda uygulamadaki **Eski kayıtları tara** düğmesiyle yalnızca isterseniz müzik/dosya okuma izni verin. Eski v1.4 kayıtları Artist - Title_YYYYMMDD_HHMMSS.mp3 biçimindeyse başlık ve sanatçı dosya adından geri yüklenebilir. Eski dosyanın gerçek başlığı anlaşılamıyorsa yalnızca dosya adı geçmişe eklenir; yanlış şarkı eşleşmesi yapılmaz. Geçmişin veritabanı uygulamanın özel alanında saklanır; APK kaldırılırsa bu veritabanı silinir, mevcut MP3'lerden yeniden oluşturulabilir.
+## Gerçek sınırlar / reklamlar
 
-## Sınırlar
+Bu özellik reklam engelleyici değildir; YouTube uygulamasının reklamlarını değiştirmez veya atlamaz.
+Android'in medya oturumu API'sini kullanır. YouTube sürümü, video/reklam türü ve ayarları nedeniyle:
+- Şarkı süresi veya oynatma konumu bildirilmeyebilir.
+- Reklam ile şarkı arasındaki geçiş ayrı bir medya başlığı olarak bildirilmeyebilir.
+- Reklam şarkı biter bitmez başladığında yakalama ve metadata güncellemesi arasında küçük bir gecikme olabilir; kayda reklamın kısa bir parçası girebilir.
+- Şarkı başladıktan sonra kayda geçilirse şarkının başı dosyada olmaz.
+- Şarkının ortasında reklam başlarsa başlık değişimini şarkı sonu gibi algılayıp kayıt erken bitebilir.
 
-- Bu özellik ses tanıma / audio fingerprinting değildir. Android medya oturumunun paylaştığı başlık/sanatçı bilgilerini karşılaştırır.
-- Büyük-küçük harf, boşluk, noktalama ve aksan farklılıkları normalize edilir. Eserin farklı isimle yayımlanmış sürümleri aynı şarkı olarak algılanmayabilir.
-- Başlık/sanatçı yoksa kesin tekrar kontrolü yapılamaz.
-- Çoklu şarkı kaydı hâlâ tek MP3 olur; çoklu dosya otomatik ayırma bu sürümde yoktur.
-- Bir şarkı tekrar olsa bile kullanıcı isteğine uygun olarak kayıt durmaz ve yeni dosya kaydedilir.
-- Android 10+ gerektirir; yalnızca paylaşımına izin verilen uygulamaların sesi yakalanır.
-- Ses, şarkı bilgisi ve geçmiş **yalnızca cihaz üzerinde** saklanır.
+Süre/konum eksikse otomatik **süreyle durma garanti edilemez**; medya başlığı değişimi yine algılanabilir. Otomatik bitişi YouTube'da ilk olarak **tek bir şarkıyla test etmelisiniz.** MP3 dönüştürmesi başarısız olursa WAV yedeği bırakılır.
 
-## Derleme
+## Kayıt geçmişi
 
-GitHub Actions -> Build APK -> en yeni başarılı run -> SesTest-debug-apk ZIP dosyasından APK'yi çıkarın.
+SQLite yerel kayıt günlüğü, duplicate-song uyarısı, sanatçı/başlık adlandırması, geçmiş arama (son 20 kayıt), ve eski sürümlerden kayıt içe aktarma özellikleri v1.5 ile aynıdır. Android'in ses yakalama izni ve kayıt uygulamalarıyla ilgili sınırlamaları geçerlidir. Kullanımınızda içerik haklarına uyun.
+
+## GitHub Actions derlemesi
+
+Actions -> Build APK -> son başarılı run -> **SesTest-debug-apk** ZIP dosyası.
