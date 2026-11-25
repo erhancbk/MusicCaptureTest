@@ -27,6 +27,9 @@ class CaptureService : Service() {
         const val EXTRA_RESULT_CODE = "resultCode"
         const val EXTRA_RESULT_DATA = "resultData"
         const val EXTRA_STATUS = "status"
+        const val EXTRA_PROGRESS = "smartStopProgress"
+        const val EXTRA_AUTO_STOP = "autoStopEnabled"
+        const val PREF_AUTO_STOP = "smartAutoStop"
         const val PREFS = "capture_status"
         private const val CHANNEL = "internal_audio_capture"
         private const val NOTIFICATION_ID = 81
@@ -84,7 +87,10 @@ class CaptureService : Service() {
         }
 
         shouldRecord = true
-        worker = Thread({ recordPlayback(resultCode, resultData) }, "InternalAudioCapture")
+        val automatic = intent.getBooleanExtra(
+            EXTRA_AUTO_STOP, getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(PREF_AUTO_STOP, true)
+        )
+        worker = Thread({ recordPlayback(resultCode, resultData, automatic) }, "InternalAudioCapture")
         worker?.start()
         return START_NOT_STICKY
     }
@@ -140,6 +146,14 @@ class CaptureService : Service() {
         )
     }
 
+    private fun reportProgress(value: String) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putString(EXTRA_PROGRESS, value).apply()
+        sendBroadcast(
+            Intent(ACTION_STATUS).setPackage(packageName).putExtra(EXTRA_PROGRESS, value)
+        )
+    }
+
     private fun requestStop() {
         shouldRecord = false
         try {
@@ -150,7 +164,9 @@ class CaptureService : Service() {
         if (worker == null) stopSelf()
     }
 
-    private fun recordPlayback(resultCode: Int, resultData: Intent) {
+    private fun recordPlayback(
+        resultCode: Int, resultData: Intent, autoStopEnabled: Boolean
+    ) {
         var projection: MediaProjection? = null
         var projectionCallback: MediaProjection.Callback? = null
         var tempFile: File? = null
@@ -158,6 +174,9 @@ class CaptureService : Service() {
         var signalDetected = false
         val seenSongs = linkedMapOf<String, SongInfo>()
         var lastSongCheck = 0L
+        var lastProgressCheck = 0L
+        var autoStopReason: String? = null
+        val smartStop = if (autoStopEnabled) SmartStopMonitor() else null
         var duplicateDetected = false
         val history = RecordingHistory(this)
         // Recover names from older MP3 files even when upgrading requires an uninstall.
@@ -210,20 +229,55 @@ class CaptureService : Service() {
                 "Ses kaydı başlatılamadı."
             }
 
-            report("Kayıt sürüyor. Bir şarkı çal, sonra Durdur / Kaydet seç.")
+            report(
+                if (autoStopEnabled) {
+                    "Kayıt sürüyor. Akıllı bitiş açık: şarkı sonu izleniyor."
+                } else {
+                    "Kayıt sürüyor. Durdur / Kaydet ile kaydedebilirsin."
+                }
+            )
+            reportProgress(
+                if (autoStopEnabled) "Akıllı bitiş: şarkı/süre bilgisi bekleniyor"
+                else "Otomatik bitiş kapalı"
+            )
             val buffer = ByteArray(16384)
             FileOutputStream(recordingFile).use { output ->
                 while (shouldRecord) {
                     val now = android.os.SystemClock.elapsedRealtime()
-                    if (now - lastSongCheck >= 1000L) {
+                    val checkInterval = if (autoStopEnabled) 250L else 1000L
+                    if (now - lastSongCheck >= checkInterval) {
                         lastSongCheck = now
-                        PlayingSong.current(this)?.let { song ->
-                            val key = song.sourcePackage + "|" + song.title + "|" + song.artist
+                        val playback = if (autoStopEnabled) {
+                            MusicPlayback.snapshot(this, smartStop?.lockedSong?.sourcePackage)
+                        } else null
+                        if (smartStop != null) {
+                            val decision = smartStop.evaluate(playback, now)
+                            if (now - lastProgressCheck >= 1000L) {
+                                reportProgress(decision.progress)
+                                lastProgressCheck = now
+                            }
+                            if (decision.stopReason != null) {
+                                autoStopReason = decision.stopReason
+                                report(autoStopReason!!)
+                                break // Do not append more audio after a song change/end.
+                            }
+                        }
+                        val song = if (autoStopEnabled) {
+                            playback?.takeIf {
+                                it.state == android.media.session.PlaybackState.STATE_PLAYING &&
+                                    smartStop?.lockedSong?.sourcePackage == it.song.sourcePackage &&
+                                    smartStop.lockedSong?.title.equals(it.song.title, ignoreCase = true)
+                            }?.song
+                        } else {
+                            PlayingSong.current(this)
+                        }
+                        song?.let { detected ->
+                            val key = detected.sourcePackage + "|" + detected.title + "|" + detected.artist
                             if (!seenSongs.containsKey(key)) {
-                                seenSongs[key] = song
-                                runCatching { history.firstMatch(song) }.getOrNull()?.let { match ->
+                                seenSongs[key] = detected
+                                runCatching { history.firstMatch(detected) }.getOrNull()?.let { match ->
                                     duplicateDetected = true
-                                    warnPreviouslySaved(song, match)
+                                    warnPreviouslySaved(detected, match)
                                 }
                             }
                         }
@@ -256,8 +310,15 @@ class CaptureService : Service() {
             if (bytesWritten <= 0L) {
                 report("Ses verisi gelmedi; dosya oluşturulmadı.")
             } else {
-                PlayingSong.current(this)?.let { song ->
+                if (autoStopEnabled && smartStop?.lockedSong != null) {
+                    // Never label a song with the metadata of the following ad/track.
+                    val song = smartStop.lockedSong!!
+                    seenSongs.clear()
                     seenSongs[song.sourcePackage + "|" + song.title + "|" + song.artist] = song
+                } else {
+                    PlayingSong.current(this)?.let { song ->
+                        seenSongs[song.sourcePackage + "|" + song.title + "|" + song.artist] = song
+                    }
                 }
                 val hasMultipleSongs = seenSongs.size > 1
                 val songForFilename = if (seenSongs.size == 1) seenSongs.values.first() else null
@@ -291,8 +352,11 @@ class CaptureService : Service() {
                     }
                     val duplicateLabel = if (isRepeat) " ⚠ Tekrar kayıt." else ""
                     val logLabel = if (!logged) " (Geçmişe yazılamadı.)" else ""
+                    val autoMessage = if (autoStopReason != null) {
+                        " • " + autoStopReason
+                    } else ""
                     report("MP3 kaydedildi: Müzik/MusicCaptureTest/" + filename +
-                        duplicateLabel + suffix + logLabel)
+                        duplicateLabel + suffix + logLabel + autoMessage)
                 } else {
                     report(
                         "Sessiz MP3 kaydı: " + filename +
@@ -312,6 +376,10 @@ class CaptureService : Service() {
             }
             try { projection?.stop() } catch (_: Exception) {}
             tempFile?.delete()
+            if (autoStopEnabled) reportProgress(
+                if (autoStopReason != null) "Akıllı bitiş: kayıt otomatik sonlandırıldı"
+                else "Akıllı bitiş: oturum sona erdi"
+            )
             worker = null
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
