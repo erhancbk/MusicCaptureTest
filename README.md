@@ -1,6 +1,21 @@
-# MusicCaptureTest / Ses Test v1.6
+# MusicCaptureTest / Ses Test v1.7
 
 Samsung Galaxy Note 10+ (Android 12) için dahili ses yakalama ve 320 kb/sn MP3 kayıt.
+
+
+## v1.7: Mükerrer yeni kaydı sil
+
+- Mükerrer şarkı tespit edildiğinde hem ekranda **⚠ Bu yeni kaydı sil** düğmesi görünür, hem de Android tekrar uyarısı bildiriminde **Yeni kaydı sil** eylemi bulunur.
+- Düğmeye basıldığında **önce onay ekranı açılır**.
+- Kayıt hâlâ sürüyorsa, onay sonrasında sadece o anki yeni kayıt durdurulur ve geçici PCM verisi silinir. MP3 oluşturulmaz.
+- Otomatik şarkı bitişi MP3'ü kaydetmişse, onay sonrasında yalnızca **bu oturumun yeni MP3 dosyası**, MediaStore tarafından verilen gerçek kayıt URI'si üzerinden silinir. Kayıt geçmişindeki bu dosyanın kaydı da kaldırılır.
+- MP3 kodlanırken silme istenirse işlem tamamlanır tamamlanmaz oluşan yeni dosya kaldırılır; eski kopyaya dokunulmaz.
+- Geçmişte duran ilk/orijinal MP3 **hiçbir durumda bu düğmeden silinmez**.
+- Silme başarısız olursa dosya korunur ve ekranda hata gösterilir; yeniden denenebilir.
+- Kullanıcı **Vazgeç** derse mükerrer kayıt normal şekilde devam eder.
+- Yeni kayda başlanınca önceki oturumun silme düğmesi gizlenir. Düğme yalnızca o anki mükerrer oturuma ait dosyayı hedefler.
+
+Bu özellik mükerrer şarkıyı otomatik silmez; kullanıcı her seferinde bilinçli olarak silmeyi seçer.
 
 ## Yeni: Akıllı bitiş (şarkı sonunda otomatik durdur ve kaydet)
 
